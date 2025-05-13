@@ -1,0 +1,7 @@
+v0.1 - created base code for application.
+v0.2 - added file location selection.
+v0.3 - added seconds to time log and display. Frame and UX/UI adjustments.
+v0.4 - added button state functionality to prevent multiple clock in/clock out logging.
+v0.5 - added json file saving and file location recall.
+v0.6 - added exit confirmation and logging if app is closed before logging out.
+v0.7 - 
