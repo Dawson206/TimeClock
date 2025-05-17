@@ -20,8 +20,6 @@ class TimePunchApp(ctk.CTk):
         self.history = []
         self.last_clock_in_time = None
 
-
-
         # Main frame
         self.frame = ctk.CTkFrame(self)
         self.frame.pack(pady=30, padx=30, fill="both", expand=True)
@@ -62,8 +60,6 @@ class TimePunchApp(ctk.CTk):
         # Load previous history
         self.load_history()
         
-
-
     def clock_in(self):
         if self.last_clock_in_time:
             self.status_label.configure(text="Already clocked in.")
@@ -116,19 +112,17 @@ class TimePunchApp(ctk.CTk):
             self.history_box.insert("end", f"Worked:    {entry['duration']}\n\n")
         self.history_box.configure(state="disabled")
 
-
     def save_history(self):
         with open(self.data_file, "w") as f:
             json.dump(self.history, f, indent=4)
             
-
     def load_history(self):
         if os.path.exists(self.data_file):
             with open(self.data_file, "r") as f:
                 self.history = json.load(f)
         else:
             self.history = []
-            self.update_history_display()
+        self.update_history_display()
 
     def clear_history(self):
         if messagebox.askyesno("Confirm Reset", "Are you sure you want to reset? This deletes the entire history?"):
