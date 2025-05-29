@@ -1,6 +1,7 @@
 import customtkinter as ctk
-from datetime import datetime
+from datetime import datetime, timedelta
 from tkinter import filedialog, messagebox
+from collections import defaultdict
 import json
 import os
 
@@ -11,7 +12,7 @@ class TimePunchApp(ctk.CTk):
     def __init__(self):
         super().__init__()
 
-        self.title("Timesheet Punch Card")
+        self.title("Timesheet Punch Card | V0.8")
         self.geometry("800x400")
         self.resizable(True, True)
 
@@ -56,10 +57,8 @@ class TimePunchApp(ctk.CTk):
         self.history_box = ctk.CTkTextbox(self.frame, height=120, width=500)
         self.history_box.pack(pady=(10, 0))
         self.history_box.configure(state="disabled")
-        self.update_history_display()
-        # Load previous history
         self.load_history()
-        
+
     def clock_in(self):
         if self.last_clock_in_time:
             self.status_label.configure(text="Already clocked in.")
@@ -69,6 +68,8 @@ class TimePunchApp(ctk.CTk):
         self.status_label.configure(text=f"Clocked IN at {self.last_clock_in_time.strftime('%m-%d-%Y %H:%M:%S')}")
         self.clock_in_button.configure(state="disabled")
         self.clock_out_button.configure(state="normal")
+        self.save_history()
+        self.update_history_display()
 
     def clock_out(self):
         if not self.last_clock_in_time:
@@ -113,19 +114,37 @@ class TimePunchApp(ctk.CTk):
         self.history_box.configure(state="disabled")
 
     def save_history(self):
+        data = {
+            "history": self.history,
+            "last_clock_in_time": self.last_clock_in_time.strftime("%m-%d-%Y %H:%M:%S") if self.last_clock_in_time else None
+        }
         with open(self.data_file, "w") as f:
-            json.dump(self.history, f, indent=4)
-            
+            json.dump(data, f, indent=4)
+
     def load_history(self):
         if os.path.exists(self.data_file):
             with open(self.data_file, "r") as f:
-                self.history = json.load(f)
+                data = json.load(f)
+                self.history = data.get("history", [])
+                last_time = data.get("last_clock_in_time")
+                if last_time:
+                    try:
+                        self.last_clock_in_time = datetime.strptime(last_time, "%m-%d-%Y %H:%M:%S")
+                        self.status_label.configure(text=f"Recovered clock-in from {self.last_clock_in_time.strftime('%m-%d-%Y %H:%M:%S')}")
+                        self.clock_in_button.configure(state="disabled")
+                        self.clock_out_button.configure(state="normal")
+                    except Exception:
+                        self.last_clock_in_time = None
+                else:
+                    self.last_clock_in_time = None
         else:
             self.history = []
+            self.last_clock_in_time = None
+
         self.update_history_display()
 
     def clear_history(self):
-        if messagebox.askyesno("Confirm Reset", "Are you sure you want to reset? This deletes the entire history?"):
+        if messagebox.askyesno("Confirm Reset", "Are you sure you want to reset? This will delete the entire history."):
             self.history = []
             self.last_clock_in_time = None
             self.save_history()
@@ -135,7 +154,6 @@ class TimePunchApp(ctk.CTk):
             self.update_history_display()
 
     def export_to_txt(self):
-
         if self.last_clock_in_time:
             self.status_label.configure(text="You must clock out before exporting.")
             return
@@ -154,21 +172,47 @@ class TimePunchApp(ctk.CTk):
             self.status_label.configure(text="Export canceled.")
             return
 
-        try:
-            with open(file_path, "w") as f:
-                for entry in self.history:
-                    try:
-                        clock_in_dt = datetime.strptime(entry["in"], "%m-%d-%Y %H:%M:%S")
-                        day_of_week = clock_in_dt.strftime("%A")
-                    except Exception:
-                        day_of_week = "Unknown Day"
+        weekly_entries = defaultdict(list)
 
-                    f.write(f"{day_of_week}\n")
-                    f.write(f"Clock In:  {entry['in']}\n")
-                    f.write(f"Clock Out: {entry['out']}\n")
-                    f.write(f"Worked:    {entry['duration']}\n\n")
+        try:
+            for entry in self.history:
+                try:
+                    clock_in_dt = datetime.strptime(entry["in"], "%m-%d-%Y %H:%M:%S")
+                    week_start = clock_in_dt - timedelta(days=clock_in_dt.weekday())
+                    week_key = week_start.strftime("%Y-%m-%d")  # Use string key to normalize
+                    weekly_entries[week_key].append(entry)
+                except Exception:
+                    continue
+
+            with open(file_path, "w") as f:
+                for week_key in sorted(weekly_entries.keys()):
+                    week_start_dt = datetime.strptime(week_key, "%Y-%m-%d")
+                    f.write(f"=== Week of {week_start_dt.strftime('%B %d, %Y')} ===\n\n")
+
+                    total_duration = timedelta()
+
+                    for entry in sorted(weekly_entries[week_key], key=lambda e: datetime.strptime(e["in"], "%m-%d-%Y %H:%M:%S")):
+                        try:
+                            clock_in_dt = datetime.strptime(entry["in"], "%m-%d-%Y %H:%M:%S")
+                            clock_out_dt = datetime.strptime(entry["out"], "%m-%d-%Y %H:%M:%S")
+                            duration = clock_out_dt - clock_in_dt
+                            total_duration += duration
+
+                            day_of_week = clock_in_dt.strftime("%A")
+                            f.write(f"{day_of_week}\n")
+                            f.write(f"Clock In:  {entry['in']}\n")
+                            f.write(f"Clock Out: {entry['out']}\n")
+                            f.write(f"Worked:    {entry['duration']}\n\n")
+                        except Exception:
+                            continue
+
+                    total_seconds = int(total_duration.total_seconds())
+                    hours, remainder = divmod(total_seconds, 3600)
+                    minutes, seconds = divmod(remainder, 60)
+                    f.write(f"Weekly Total Hours Worked: {hours}h {minutes}m {seconds}s\n\n")
 
             self.status_label.configure(text=f"Timesheet exported to: {file_path}")
+
         except Exception as e:
             messagebox.showerror("Export Failed", f"Could not export timesheet:\n{e}")
 
@@ -181,7 +225,6 @@ class TimePunchApp(ctk.CTk):
         else:
             self.save_history()
             self.destroy()
-
 
 if __name__ == "__main__":
     app = TimePunchApp()
